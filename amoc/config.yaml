@@ -1,0 +1,33 @@
+# AMOC Diagnostic Tool Configuration
+# Default values for AMOC analysis parameters
+
+# Default directories
+input_directory: "/ec/res4/scratch/ccff/ece4/"
+output_directory: "./"
+
+# Analysis parameters
+nyear: 30  # Number of years to average for mean plots
+
+# Plot parameters
+plot_settings:
+  figsize:
+    width: 10
+    height: 5
+  
+  # AMOC section plot settings
+  section_plot:
+    ylim: [3000, 0]
+    xlim: [-40, 90]
+    contour_levels: [-20, -18, -16, -14, -12, -10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10, 12, 14, 16, 18, 20]
+    basin: 2  # Atlantic basin
+  
+  # AMOC timeseries plot settings  
+  timeseries_plot:
+    depth_range: [500, 2000]
+    lat_range: [38, 50]
+    ylim: [5, 20]
+    basin: 2  # Atlantic basin
+
+# File patterns
+file_patterns:
+  amoc: "{exp}_oce_1m_diaptr3d_*.nc"

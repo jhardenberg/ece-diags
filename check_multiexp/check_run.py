@@ -175,12 +175,14 @@ def read_output(exps, user = None, read_again = [], cart_exp = '/ec/res4/scratch
     amoc_mean_exp = dict()
     amoc_ts_exp = dict()
 
-
     for exp in exps:
         print(exp)
         coupled = False
         if len(glob.glob(filz_nemo[exp])) > 0:
+            print('coupled')
             coupled = True
+        else:
+            print(f'NO files matching pattern: {filz_nemo[exp]}. Assuming atm-only')
 
         if os.path.exists(cart_out + f'clim_tuning_{exp}.nc') and exp not in read_again:
             atmclim_exp[exp] = xr.open_dataset(cart_out + f'clim_tuning_{exp}.nc')
@@ -380,6 +382,9 @@ def plot_amoc_vs_gtas(clim_all, exps = None, cart_out = cart_out, tas_clim = 287
 
     if colors is None:
         colors = get_colors(exps)
+
+    # print('AAAAAA')
+    # print(clim_all['amoc_ts'].keys())
 
     for exp, col in zip(exps, colors):
         if isinstance(clim_all['amoc_ts'][exp], xr.DataArray):
@@ -659,15 +664,20 @@ def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/
     clim_all = read_output(exps, user = user, read_again = read_again, cart_exp = cart_exp, cart_out = cart_out_nc)
 
     fig_greg = plot_greg(clim_all['atm_mean'], exps, imbalance = imbalance, ylim = None, cart_out = cart_out_figs)
-    fig_amoc_greg = plot_amoc_vs_gtas(clim_all, exps, lw = 0.25, cart_out = cart_out_figs)
+    if 'amoc_ts' in clim_all:
+        fig_amoc_greg = plot_amoc_vs_gtas(clim_all, exps, lw = 0.25, cart_out = cart_out_figs)
 
     figs_rad = plot_zonal_fluxes_vs_ceres(clim_all['atm_clim'], exps = exps, cart_out = cart_out_figs)
 
-    fig_tas = plot_zonal_tas_vs_ref(clim_all['atm_clim'], exps = exps, ref_exp = ref_exp, cart_out = cart_out_figs)
+    if 'amoc_ts' in clim_all:
+        fig_tas = plot_zonal_tas_vs_ref(clim_all['atm_clim'], exps = exps, ref_exp = ref_exp, cart_out = cart_out_figs)
 
     ###### CAN ADD NEW DIAGS HERE
 
-    allfigs = [fig_greg, fig_amoc_greg] + figs_rad + [fig_tas]
+    if 'amoc_ts' in clim_all:
+        allfigs = [fig_greg, fig_amoc_greg] + figs_rad + [fig_tas]
+    else:
+        allfigs = [fig_greg] + figs_rad
 
     print(f'Done! Check results in {cart_out_figs}')
 

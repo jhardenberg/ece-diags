@@ -484,6 +484,36 @@ def plot_amoc_ts(amoc_max, exp, ylim = (5, 20), ax = None, color = None, text_xs
     return ax
 
 
+<<<<<<< HEAD
+=======
+
+def global_mean(ds, compute = True):
+    try:
+        ds = ds.assign_coords(lat=ds.lat.compute())
+        all_lats = ds.lat.groupby('lat').mean()
+        weights = np.cos(np.deg2rad(all_lats))
+    except ValueError as coso:
+        print(coso)
+        print('Dask array, trying to use unique instead')
+        all_lats = np.unique(ds.lat.values)
+        weights = np.cos(np.deg2rad(all_lats))
+
+    if 'time' in ds.coords:
+        ds_mean = ds.groupby('time.year').mean().groupby('lat').mean().weighted(weights).mean('lat')
+    elif 'year' in ds.coords:
+        ds_mean = ds.groupby('lat').mean().weighted(weights).mean('lat')
+    
+    ds_mean = ds_mean['rsut rlut rsdt tas'.split()]
+    ds_mean['toa_net'] = ds_mean.rsdt - ds_mean.rlut - ds_mean.rsut
+    
+    if compute:
+        ds_mean = ds_mean.compute()
+
+    return ds_mean
+
+
+
+>>>>>>> 1b52baa (Add plot for sensitivities analysis)
 def plot_greg(atmmean_exp, exps, cart_out = cart_out, tas_clim = 287.29, net_toa_clim = 0.6, n_end = 20, imbalance = -0.9, ylim = None, colors = None):
     """
     gregory plot
@@ -698,6 +728,145 @@ def plot_zonal_fluxes_vs_ceres(atm_clim, exps, plot_anomalies = True, weighted =
 
     return figs
 
+def plot_zonal_fluxes_vs_ref(atm_clim, exps, ref_exp, plot_anomalies=True, weighted=False, 
+                             datadir=None, cart_out=None, colors=None, ylim=None):
+    """
+    plot_anomalies: plots anomalies wrt reference experiment
+    weighted: weights for cosine of latitude
+    """
+
+    if cart_out is None:
+        cart_out = './'
+
+    atmclim = create_ds_exp(atm_clim)
+    atmclim = atmclim.groupby('lat').mean()
+    atmclim['toa_net'] = atmclim.rsdt - (atmclim.rsut + atmclim.rlut)
+
+    if weighted:
+        weights = np.cos(np.deg2rad(atmclim.lat)).compute()
+
+    okvars = ['rlut', 'rsut', 'toa_net', 'rsdt']
+
+    figs = []
+    if colors is None:
+        colors = get_colors(exps)
+
+    for var in okvars:
+        fig, ax = plt.subplots(figsize=(12, 8))
+        y_ref = atmclim.sel(exp=ref_exp)[var]
+
+        if plot_anomalies:
+            ax.axhline(0., color='lightgrey')
+
+        for exp, col in zip(exps, colors):
+            if exp == ref_exp:
+                continue  # non serve confrontare il ref con se stesso
+            y = atmclim.sel(exp=exp)[var]
+            if plot_anomalies:
+                y = y - y_ref
+            if weighted:
+                y = y * weights
+
+            ax.plot(atmclim.lat, y, label=exp, color=col)
+            ax.text(float(atmclim.lat.max()), y.values[-1], exp, fontsize=12, ha='right', color=col)
+
+        if not plot_anomalies:
+            if weighted:
+                y_ref = y_ref * weights
+            ax.plot(atmclim.lat, y_ref, label=f'{ref_exp} (ref)', color='black', lw=2)
+            ax.text(float(atmclim.lat.max()), y_ref.values[-1], ref_exp, fontsize=12, ha='right', color='black')
+
+        ax.set_xlabel('Latitude')
+        add = ''
+        if weighted:
+            add = ' (weighted with cosine)'
+        if plot_anomalies:
+            ax.set_ylabel(f'{var} bias wrt {ref_exp} (W/m2)' + add)
+        else:
+            ax.set_ylabel(f'{var} vs {ref_exp} (W/m2)' + add)
+
+        plt.xlim(-90, 105)
+        if ylim is not None:
+            plt.ylim(ylim)
+
+        add = ''
+        if not plot_anomalies:
+            add = '_full'
+        if weighted:
+            add += '_weighted'
+
+        figname = f'check_radiation_vs_ref_{ref_exp}_{var}_{"-".join(exps)}{add}.pdf'
+        fig.savefig(os.path.join(cart_out, figname))
+        figs.append(fig)
+
+    return figs
+
+def plot_zonal_fluxes_by_param(atm_clim, ref_exp, param_map, cart_out, 
+                               plot_anomalies=True, weighted=False, colors=None, ylim=None):
+    """
+    Genera un plot per ciascun parametro modificato (± variazione) confrontando vs ref_exp.
+
+    param_map: dict con chiavi = parametri, valori = tuple (exp_minus, exp_plus)
+    """
+
+    atmclim = create_ds_exp(atm_clim)
+    atmclim = atmclim.groupby('lat').mean()
+    atmclim['toa_net'] = atmclim.rsdt - (atmclim.rsut + atmclim.rlut)
+
+    if weighted:
+        weights = np.cos(np.deg2rad(atmclim.lat)).compute()
+
+    okvars = ['rlut', 'rsut', 'toa_net', 'rsdt']
+    figs = []
+
+    if colors is None:
+        colors = ['#1f77b4', '#ff7f0e']  # blu = -%, arancio = +%
+
+    for param, (exp_minus, exp_plus) in param_map.items():
+        fig, axes = plt.subplots(len(okvars), 1, figsize=(12, 4*len(okvars)), sharex=True)
+
+        for i, var in enumerate(okvars):
+            ax = axes[i] if len(okvars) > 1 else axes
+            y_ref = atmclim.sel(exp=ref_exp)[var]
+
+            if plot_anomalies:
+                ax.axhline(0., color='lightgrey')
+
+            for exp, col, label in zip(
+                [exp_minus, exp_plus],
+                colors,
+                [f"-50%", f"+50%"]
+            ):
+                y = atmclim.sel(exp=exp)[var]
+                if plot_anomalies:
+                    y = y - y_ref
+                if weighted:
+                    y = y * weights
+
+                ax.plot(atmclim.lat, y, label=label, color=col, lw=2)
+                ax.text(float(atmclim.lat.max()), y.values[-1], label, fontsize=11, ha='right', color=col)
+
+            ax.set_ylabel(f"{var} (W/m2)")
+            ax.set_title(f"{param} — {var}", fontsize=13)
+            ax.grid(True, ls='--', alpha=0.3)
+            if ylim is not None:
+                ax.set_ylim(ylim)
+
+        axes[-1].set_xlabel('Latitude')
+
+        plt.suptitle(f"{param}: effect of ±50% variation vs {ref_exp}", fontsize=15)
+        plt.xlim(-90, 90)
+        plt.legend(loc='upper right')
+
+        add = ''
+        if weighted:
+            add = '_weighted'
+
+        figname = f'zonal_fluxes_{param}_vs_{ref_exp}{add}.pdf'
+        fig.savefig(os.path.join(cart_out, figname), bbox_inches='tight')
+        figs.append(fig)
+
+    return figs
 
 def plot_map_ocean(oce_clim, exps, var, ref_exp = None, vmin = None, vmax = None, xlabel = None, ylabel = None):
     """
@@ -783,6 +952,7 @@ def plot_zonal_tas_vs_ref(atmclim, exps, ref_exp = None, cart_out = cart_out):
     return fig
 
 
+<<<<<<< HEAD
 def plot_var_ts(clim_all, domain, vname, exps = None, ref_exp = None, rolling = None, norm_factor = 1., cart_out = cart_out):
     """
     Plots timeseries of var "vname" in domain "domain" for all exps.
@@ -838,6 +1008,9 @@ def check_energy_balance_ocean(clim_all, remove_ice_formation = False):
 
 
 def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/scratch/{}/ece4/', cart_out = './output/', imbalance = 0., ref_exp = None, atm_only = False, atmvars = 'rsut rlut rsdt tas pr'.split(), ocevars = 'tos heatc qt_oce sos'.split(), icevars = 'siconc sivolu sithic'.split(), year_clim = None):
+=======
+def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/scratch/{}/ece4/', cart_out = './output/', imbalance = 0., ref_exp = None, param_map = {}):
+>>>>>>> 1b52baa (Add plot for sensitivities analysis)
     """
     Runs all multi-exps diagnostics.
 
@@ -865,13 +1038,24 @@ def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/
 
     ### Gregory and amoc gregory
     fig_greg = plot_greg(clim_all['atm_mean'], exps, imbalance = imbalance, ylim = None, cart_out = cart_out_figs)
+<<<<<<< HEAD
     if coupled:
+=======
+    
+    if 'amoc_ts' in clim_all:
+>>>>>>> 1b52baa (Add plot for sensitivities analysis)
         fig_amoc_greg = plot_amoc_vs_gtas(clim_all, exps, lw = 0.25, cart_out = cart_out_figs)
 
     # Atm fluxes and zonal tas
     figs_rad = plot_zonal_fluxes_vs_ceres(clim_all['atm_clim'], exps = exps, cart_out = cart_out_figs)
 
+<<<<<<< HEAD
     if coupled:
+=======
+    figs_diffref = plot_zonal_fluxes_vs_ref(clim_all['atm_clim'], exps=exps, ref_exp=ref_exp, cart_out=cart_out_figs)
+    
+    if 'amoc_ts' in clim_all:
+>>>>>>> 1b52baa (Add plot for sensitivities analysis)
         fig_tas = plot_zonal_tas_vs_ref(clim_all['atm_clim'], exps = exps, ref_exp = ref_exp, cart_out = cart_out_figs)
 
     ###### CAN ADD NEW DIAGS HERE
@@ -886,10 +1070,19 @@ def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/
         fig_siv2 = plot_var_ts(clim_all, 'ice', 'sivolu_S', cart_out = cart_out_figs, rolling=rolling)
         fig_sic2 = plot_var_ts(clim_all, 'ice', 'siconc_S', cart_out = cart_out_figs, rolling=rolling)
 
+<<<<<<< HEAD
     if coupled:
         allfigs = [fig_greg, fig_amoc_greg] + figs_rad + [fig_tas] + [fig_tos, fig_heatc, fig_qtoce, fig_enebal, fig_siv, fig_sic, fig_siv2, fig_sic2]
+=======
+    if 'amoc_ts' in clim_all:
+        allfigs = [fig_greg, fig_amoc_greg] + figs_rad + figs_diffref + [fig_tas]
+>>>>>>> 1b52baa (Add plot for sensitivities analysis)
     else:
-        allfigs = [fig_greg] + figs_rad
+        allfigs = [fig_greg] + figs_rad + figs_diffref
+
+    figs_param = plot_zonal_fluxes_by_param(atm_clim=clim_all['atm_clim'], ref_exp=ref_exp, param_map=param_map, cart_out=cart_out_figs, plot_anomalies=True,weighted=False)
+
+    allfigs += figs_param
 
     print(f'Done! Check results in {cart_out_figs}')
 

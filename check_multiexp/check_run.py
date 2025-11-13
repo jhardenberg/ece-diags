@@ -1287,7 +1287,7 @@ def calc_and_plot_slopes_from_raw(param_map, ref_exp='n000', user=None,
 # ============================================================
 ################################################ MAIN FUNCTION ###########################
 
-def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/scratch/{}/ece4/', cart_out = './output/', imbalance = 0., ref_exp = None, atm_only = False, atmvars = 'rsut rlut rsdt tas pr'.split(), ocevars = 'tos heatc qt_oce sos'.split(), icevars = 'siconc sivolu sithic'.split(), year_clim = None, plot_diffref=False, plot_param=False, param_map={}):
+def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/scratch/{}/ece4/', cart_out = './output/', imbalance = 0., ref_exp = None, atm_only = False, atmvars = 'rsut rlut rsdt tas pr'.split(), ocevars = 'tos heatc qt_oce sos'.split(), icevars = 'siconc sivolu sithic'.split(), year_clim = None, plot_diffref=False, plot_param=False, param_map={}, skip_first_year=False):
     """
     Runs all multi-exps diagnostics.
 
@@ -1342,7 +1342,7 @@ def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/
         fig_sic2 = plot_var_ts(clim_all, 'ice', 'siconc_S', cart_out = cart_out_figs, rolling=rolling)
         allfigs += [fig_tos, fig_heatc, fig_qtoce, fig_enebal, fig_siv, fig_sic, fig_siv2, fig_sic2]
 
-  # --- Optional diagnostics for tuning experiments
+    # --- Optional diagnostics for tuning experiments
     if plot_diffref:
         figs_diffref = plot_zonal_fluxes_vs_ref(
             clim_all['atm_clim'], exps=exps, ref_exp=ref_exp, cart_out=cart_out_figs
@@ -1350,6 +1350,13 @@ def compare_multi_exps(exps, user = None, read_again = [], cart_exp = '/ec/res4/
         allfigs += figs_diffref
 
     if plot_param:
+        if 'atm_clim' not in clim_all:
+            raise KeyError("Expected 'atm_clim' in clim_all, but not found.")
+        if skip_first_year:
+            for exp, ds in clim_all['atm_clim'].items():
+                if ds is not None and 'year' in ds.coords:
+                    clim_all['atm_clim'][exp] = ds.isel(year=slice(1, None))
+
         figs_param = plot_zonal_fluxes_by_param(
             atm_clim=clim_all['atm_clim'],
             ref_exp=ref_exp,
@@ -1392,6 +1399,10 @@ def main(config_path = None):
     cart_out = config.get('cart_out')
     imbalance = config.get('imbalance')
     ref_exp = config.get('ref_exp')
+    plot_param = config.get('plot_param', False)
+    plot_diffref = config.get('plot_diffref', False)
+    param_map = config.get('param_map', {})
+    skip_first_year = config.get('skip_first_year', False)
     
 
     if user is None:
@@ -1404,7 +1415,7 @@ def main(config_path = None):
     print(f"Cart exp: {cart_exp}")
     print(f"Cart out: {cart_out}")
 
-    clim_all, figs = compare_multi_exps(exps, user = user, read_again = read_again, cart_exp = cart_exp, cart_out = cart_out, imbalance = imbalance, ref_exp = ref_exp)
+    clim_all, figs = compare_multi_exps(exps, user = user, read_again = read_again, cart_exp = cart_exp, cart_out = cart_out, imbalance = imbalance, ref_exp = ref_exp, plot_param=plot_param, plot_diffref=plot_diffref, param_map=param_map,skip_first_year=skip_first_year)
 
     return clim_all, figs
     

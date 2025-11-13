@@ -22,3 +22,8 @@ ref_exp: 'TN10'
 
 # skip first year of data in the analysis (to avoid spinup effects)
 skip_first_year: true
+
+# Optional diagnostics
+plot_param: true
+plot_diffref: false
+param_map: {}

@@ -88,7 +88,7 @@ def get_areas_nemo(exp, user, cart_exp = cart_exp, grid = 'T'):
     #ocean areas
     areas = xr.load_dataset(cart_exp.format(user) + f'/{exp}/areas.nc')
     
-    gname = [nam for nam in areas.data_vars if '-T' in nam]
+    gname = [nam for nam in areas.data_vars if f'-{grid}' in nam]
 
     if len(gname) > 1:
         raise ValueError(f'Too many grid names matching: {gname}')
@@ -101,7 +101,7 @@ def get_mask_nemo(exp, user, cart_exp = cart_exp, grid = 'T'):
     #ocean areas
     masks = xr.load_dataset(cart_exp.format(user) + f'/{exp}/masks.nc')
 
-    gname = [nam for nam in masks.data_vars if '-T' in nam]
+    gname = [nam for nam in masks.data_vars if f'-{grid}' in nam]
     if len(gname) > 1:
         raise ValueError(f'Too many grid names matching: {gname}')
     
@@ -225,8 +225,10 @@ def compute_oce_clim(ds, exp, user, cart_exp = cart_exp, cart_out = cart_out, oc
     ds = ds.rename({'time_counter': 'time'})
     # print(ds.data_vars)
     ds = ds[ocevars].groupby('time.year').mean()
-    ds = ds.rename({f'x_grid_{grid}_inner': 'x', f'y_grid_{grid}_inner': 'y'})
-    ds = ds.rename({f'x_grid_{grid}': 'x', f'y_grid_{grid}': 'y'})
+    if f'x_grid_{grid}_inner' in ds.dims:
+        ds = ds.rename({f'x_grid_{grid}_inner': 'x', f'y_grid_{grid}_inner': 'y'})
+    if f'x_grid_{grid}' in ds.dims:
+        ds = ds.rename({f'x_grid_{grid}': 'x', f'y_grid_{grid}': 'y'})
 
     if year_clim is None:
         print('Using last 20 years for climatology')
@@ -449,7 +451,18 @@ def read_output(exps, user = None, read_again = [], cart_exp = cart_exp, cart_ou
 
 
 def create_ds_exp(exp_dict):
-    x_ds = xr.concat(exp_dict.values(), dim=pd.Index(exp_dict.keys(), name='exp'))
+    """
+    Creates a multiexp dataset with a new dimension "exp".
+    """
+    if 'lat' in list(exp_dict.values())[0].coords:
+        # Round latitudes to avoid problems when doing groupby
+        okdict = {}
+        for exp in exp_dict:
+            okdict[exp] = exp_dict[exp].assign_coords(lat = exp_dict[exp].lat.round(2))
+    else:
+        okdict = exp_dict
+
+    x_ds = xr.concat(okdict.values(), dim=pd.Index(okdict.keys(), name='exp'))
     return x_ds
 
 
@@ -848,6 +861,10 @@ def plot_map_ocean(oce_clim, exps, var, ref_exp = None, vmin = None, vmax = None
     TO BE IMPROVED: regrid and plot with cartopy
 
     """
+    if ref_exp is not None and ref_exp not in exps:
+        print(f'WARNING: {ref_exp} not in exps! plotting absolute values')
+        ref_exp = None
+
     nx = int(np.ceil(np.sqrt(len(exps))))
     ny = int(np.ceil(len(exps)/nx))
 
@@ -890,6 +907,10 @@ def plot_zonal_tas_vs_ref(atmclim, exps, ref_exp = None, cart_out = cart_out):
     atmclim = create_ds_exp(atmclim)
     atmclim = atmclim.groupby('lat').mean()
 
+    if ref_exp is not None and ref_exp not in exps:
+        print(f'WARNING: {ref_exp} not in exps! plotting absolute values')
+        ref_exp = None
+
     fig, ax = plt.subplots(figsize=(12, 8))
 
     y_ref = None
@@ -914,10 +935,11 @@ def plot_zonal_tas_vs_ref(atmclim, exps, ref_exp = None, cart_out = cart_out):
     ax.set_xlabel('lat')
     if ref_exp is not None:
         ax.set_ylabel(f'zonal temp diff wrt {ref_exp} (K)')
+        fig.savefig(cart_out + f'check_zonal_tas_{'-'.join([exp for exp in exps if exp != ref_exp])}_vs_{ref_exp}.pdf')
     else:
         ax.set_ylabel('zonal temp (K)')
+        fig.savefig(cart_out + f'check_zonal_tas_{'-'.join(exps)}.pdf')
 
-    fig.savefig(cart_out + f'check_zonal_tas_{'-'.join([exp for exp in exps if exp != ref_exp])}_vs_{ref_exp}.pdf')
 
     return fig
 
@@ -931,6 +953,7 @@ def plot_var_ts(clim_all, domain, vname, exps = None, ref_exp = None, rolling = 
     if domain not in ['atm', 'oce', 'ice']:
         raise ValueError('domain should be one among: atm, oce, ice')
     
+    
     ts_dataset = clim_all[f'{domain}_mean']
 
     ts_dataset = {co: ts_dataset[co] for co in ts_dataset if ts_dataset[co] is not None}
@@ -939,6 +962,10 @@ def plot_var_ts(clim_all, domain, vname, exps = None, ref_exp = None, rolling = 
 
     if exps is None: exps = ts_dataset.keys()
     ts_dataset = create_ds_exp(ts_dataset)
+
+    if ref_exp is not None and ref_exp not in exps:
+        print(f'WARNING: {ref_exp} not in exps! plotting absolute values')
+        ref_exp = None
 
     y_ref = None
     if ref_exp is not None:
